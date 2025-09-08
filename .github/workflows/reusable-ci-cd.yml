@@ -1,14 +1,10 @@
-# 파일 경로: .github/.github/workflows/reusable-ci-cd.yml
-# 역할: .env 자동 생성 기능이 포함된 최종 CI/CD 워크플로우
-
 name: Reusable Per-Architecture Deployment
 
 on:
   workflow_call:
-    # ℹ️ 호출하는 워크플로우로부터 secrets를 전달받기 위해 명시적으로 선언합니다.
     secrets:
       DOT_ENV:
-        required: false # 이 secret이 없어도 워크플로우는 실패하지 않습니다.
+        required: false # 선택적 입력: docker-compose.yml 에서 .env 필요시만 사용됨
 
 jobs:
   sync-and-deploy:
@@ -24,28 +20,26 @@ jobs:
       - name: Create base repositories directory
         shell: bash
         run: |
-          mkdir -p ~/repositories
-          echo "✅ Base directory ~/repositories is ready."
+          mkdir -p /home/ubuntu/repositories
+          echo "✅ Base directory /home/ubuntu/repositories is ready."
 
-      # 2. 지정된 경로로 소스 코드 체크아웃
+      # 2. 소스 코드 체크아웃
       - name: Checkout repository to specific path
         uses: actions/checkout@v4
         with:
-          path: '~/repositories/${{ github.event.repository.name }}'
-      
-      # ✨ [최종 수정] 3. GitHub Secret으로 .env 파일 자동 생성
+          path: /home/ubuntu/repositories/${{ github.event.repository.name }}
+
+      # 3. GitHub Secret을 기반으로 .env 파일 자동 생성
       - name: Create .env file if required
         id: create-dotenv
-        working-directory: '~/repositories/${{ github.event.repository.name }}'
+        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         shell: bash
         env:
           DOT_ENV: ${{ secrets.DOT_ENV }}
         run: |
-          # docker-compose.yml 에 env_file 옵션이 있는지 체크
           if grep -q "env_file:" docker-compose.yml; then
             echo "ℹ️ docker-compose.yml requires an .env file."
 
-            # Secret 이 정의되어 있다면 .env 파일 생성
             if [ -n "$DOT_ENV" ]; then
               echo "🔑 DOT_ENV secret found. Creating .env file..."
               echo "$DOT_ENV" > .env
@@ -58,10 +52,9 @@ jobs:
             echo "ℹ️ docker-compose.yml does not reference an .env file. Skipping."
           fi
 
-
-      # 4. Docker 볼륨을 위한 디렉터리 생성
+      # 4. Docker 볼륨용 디렉터리 생성
       - name: Create directories for Docker volumes
-        working-directory: '~/repositories/${{ github.event.repository.name }}'
+        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         shell: bash
         run: |
           if [ -f .volume_dirs ]; then
@@ -74,8 +67,9 @@ jobs:
 
       # 5. 조건부 빌드 및 배포
       - name: Build and Deploy (if [deploy] is in commit message)
-        if: "contains(github.event.head_commit.message, '[deploy]')"
-        working-directory: '~/repositories/${{ github.event.repository.name }}'
+        if: contains(github.event.head_commit.message, '[deploy]')
+        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
+        shell: bash
         run: |
           REPO_NAME=${{ github.event.repository.name }}
           echo "🚀 Commit includes [deploy], starting build and deploy process for $REPO_NAME on ${{ matrix.architecture }}..."
@@ -84,7 +78,7 @@ jobs:
           docker builder prune -f
           echo "🎉 ${{ matrix.architecture }} deployment completed successfully for $REPO_NAME!"
 
-      # 6. [deploy]가 없을 경우 알림 메시지 출력
+      # 6. [deploy] 미포함시 sync만 수행
       - name: Notify code sync only
         if: "!contains(github.event.head_commit.message, '[deploy]')"
         run: |
