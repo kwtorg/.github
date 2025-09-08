@@ -4,12 +4,11 @@ on:
   workflow_call:
     secrets:
       DOT_ENV:
-        required: false # 선택적 입력: docker-compose.yml 에서 .env 필요시만 사용됨
+        required: false
 
 jobs:
   sync-and-deploy:
-    if: ${{ github.repository != 'kwtorg/project-template' }}
-    
+    if: ${{ github.repository != 'kwtorg/project-template' }} # 템플릿 repo 배포 제외
     strategy:
       matrix:
         architecture: [arm64, amd64]
@@ -21,11 +20,9 @@ jobs:
       # 1. 베이스 디렉터리 생성
       - name: Create base repositories directory
         shell: bash
-        run: |
-          mkdir -p /home/ubuntu/repositories
-          echo "✅ Base directory /home/ubuntu/repositories is ready."
+        run: mkdir -p /home/ubuntu/repositories
 
-      # 2. Runner 기본 위치에 Checkout 수행
+      # 2. Checkout
       - name: Checkout source
         uses: actions/checkout@v4
 
@@ -34,57 +31,40 @@ jobs:
         shell: bash
         run: |
           mkdir -p /home/ubuntu/repositories/${{ github.event.repository.name }}
-          # rsync 권장 (없으면 sudo apt install -y rsync 필요)
           rsync -av --delete $GITHUB_WORKSPACE/ /home/ubuntu/repositories/${{ github.event.repository.name }}/
-          echo "✅ Repository synced to /home/ubuntu/repositories/${{ github.event.repository.name }}"
 
-      # 4. GitHub Secret을 기반으로 .env 파일 자동 생성
+      # 4. .env 파일 자동 생성 (docker-compose.yml 기준 확인)
       - name: Create .env file if required
-        id: create-dotenv
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         shell: bash
         env:
           DOT_ENV: ${{ secrets.DOT_ENV }}
         run: |
-          if grep -q "env_file:" docker-compose.template.yml; then
-            echo "ℹ️ docker-compose.template.yml requires an .env file."
-
+          if [ -f "docker-compose.yml" ] && grep -q "env_file:" docker-compose.yml; then
             if [ -n "$DOT_ENV" ]; then
-              echo "🔑 DOT_ENV secret found. Creating .env file..."
               echo "$DOT_ENV" > .env
-              echo "✅ .env file created successfully."
+              echo "✅ .env file created"
             else
-              echo "❌ DOT_ENV secret is missing, but docker-compose requires .env"
+              echo "❌ DOT_ENV secret missing but required"
               exit 1
             fi
           else
-            echo "ℹ️ docker-compose.template.yml does not reference an .env file. Skipping."
+            echo "ℹ️ This project does not require .env, skipping"
           fi
 
-      # 5. docker-compose.template.yml ➝ docker-compose.yml 치환
-      - name: Generate docker-compose.yml from template
-        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
-        shell: bash
-        run: |
-          export REPO_NAME=${{ github.event.repository.name }}
-          export HOST_REPO_PATH=/home/ubuntu/repositories/${{ github.event.repository.name }}
-          envsubst < docker-compose.template.yml > docker-compose.yml
-          echo "✅ docker-compose.yml generated successfully."
-
-      # 6. Docker 볼륨 디렉토리 생성
+      # 5. Docker 볼륨 디렉토리 생성
       - name: Create directories for Docker volumes
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         shell: bash
         run: |
           if [ -f .volume_dirs ]; then
-            echo "📄 .volume_dirs file found. Creating specified directories..."
             grep -v '^#' .volume_dirs | grep -v '^[[:space:]]*$' | xargs mkdir -p
-            echo "✅ All directories for volumes are created."
+            echo "✅ Volume directories created"
           else
-            echo "ℹ️ .volume_dirs file not found, skipping directory creation."
+            echo "ℹ️ .volume_dirs not found, skipping"
           fi
 
-      # 7. 조건부 빌드 및 배포 (SHA + latest 다중태그 전략)
+      # 6. Build & Deploy (SHA + latest 태그 전략)
       - name: Build and Deploy (if [deploy] is in commit message)
         if: contains(github.event.head_commit.message, '[deploy]')
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
@@ -93,29 +73,21 @@ jobs:
           REPO_NAME=${{ github.event.repository.name }}
           COMMIT_SHA=${{ github.sha }}
 
-          echo "🚀 Starting build for $REPO_NAME:${COMMIT_SHA} and tagging as latest..."
-
-          # 빌드: 커밋SHA + latest 두 개의 태그 적용
+          echo "🚀 Building $REPO_NAME ($COMMIT_SHA, tagging also as latest)..."
           docker build -t $REPO_NAME:$COMMIT_SHA -t $REPO_NAME:latest .
 
-          # 컨테이너 실행 (latest 기준으로 실행되므로 항상 최신 버전 반영)
           docker compose --project-name $REPO_NAME up -d --remove-orphans
 
-          # Docker 빌더 캐시 정리
           docker builder prune -f
+          echo "🎉 Deployment completed for $REPO_NAME!"
 
-          echo "🎉 Deployment completed successfully for $REPO_NAME!"
-
-      # 8. [deploy] 없으면 sync만 수행
+      # 7. deploy keyword 없으면 sync만
       - name: Notify code sync only
         if: "!contains(github.event.head_commit.message, '[deploy]')"
-        run: |
-          echo "✅ Code sync completed for ${{ github.event.repository.name }} on ${{ matrix.architecture }}. No [deploy] keyword found, skipping build and deployment."
+        run: echo "✅ Code synced (no deploy)"
 
-      # 9. 오래된 이미지 정리 (72시간 이상 된 이미지 삭제)
+      # 8. 오래된 이미지 정리
       - name: Cleanup old docker images
         shell: bash
         run: |
-          echo "🧹 Cleaning up old Docker images..."
           docker image prune -af --filter "until=72h"
-          echo "✅ Deleted images older than 72 hours"
