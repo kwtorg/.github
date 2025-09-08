@@ -16,7 +16,7 @@ jobs:
       - ${{ matrix.architecture }}
 
     steps:
-      # 1. 베이스 디렉토리 생성
+      # 1. 베이스 디렉터리 생성
       - name: Create base repositories directory
         shell: bash
         run: |
@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p /home/ubuntu/repositories/${{ github.event.repository.name }}
-          # rsync 권장 (없다면 sudo apt install -y rsync 필요)
+          # rsync 권장 (없으면 sudo apt install -y rsync 필요)
           rsync -av --delete $GITHUB_WORKSPACE/ /home/ubuntu/repositories/${{ github.event.repository.name }}/
           echo "✅ Repository synced to /home/ubuntu/repositories/${{ github.event.repository.name }}"
 
@@ -52,7 +52,7 @@ jobs:
               echo "$DOT_ENV" > .env
               echo "✅ .env file created successfully."
             else
-              echo "❌ DOT_ENV secret is missing, but docker-compose.yml requires .env"
+              echo "❌ DOT_ENV secret is missing, but docker-compose requires .env"
               exit 1
             fi
           else
@@ -82,21 +82,38 @@ jobs:
             echo "ℹ️ .volume_dirs file not found, skipping directory creation."
           fi
 
-      # 7. 조건부 빌드 및 배포
+      # 7. 조건부 빌드 및 배포 (SHA + latest 다중태그 전략)
       - name: Build and Deploy (if [deploy] is in commit message)
         if: contains(github.event.head_commit.message, '[deploy]')
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         shell: bash
         run: |
           REPO_NAME=${{ github.event.repository.name }}
-          echo "🚀 Commit includes [deploy], starting build and deploy process for $REPO_NAME on ${{ matrix.architecture }}..."
-          docker compose --project-name $REPO_NAME build
+          COMMIT_SHA=${{ github.sha }}
+
+          echo "🚀 Starting build for $REPO_NAME:${COMMIT_SHA} and tagging as latest..."
+
+          # 빌드: 커밋SHA + latest 두 개의 태그 적용
+          docker build -t $REPO_NAME:$COMMIT_SHA -t $REPO_NAME:latest .
+
+          # 컨테이너 실행 (latest 기준으로 실행되므로 항상 최신 버전 반영)
           docker compose --project-name $REPO_NAME up -d --remove-orphans
+
+          # Docker 빌더 캐시 정리
           docker builder prune -f
-          echo "🎉 ${{ matrix.architecture }} deployment completed successfully for $REPO_NAME!"
+
+          echo "🎉 Deployment completed successfully for $REPO_NAME!"
 
       # 8. [deploy] 없으면 sync만 수행
       - name: Notify code sync only
         if: "!contains(github.event.head_commit.message, '[deploy]')"
         run: |
           echo "✅ Code sync completed for ${{ github.event.repository.name }} on ${{ matrix.architecture }}. No [deploy] keyword found, skipping build and deployment."
+
+      # 9. 오래된 이미지 정리 (72시간 이상 된 이미지 삭제)
+      - name: Cleanup old docker images
+        shell: bash
+        run: |
+          echo "🧹 Cleaning up old Docker images..."
+          docker image prune -af --filter "until=72h"
+          echo "✅ Deleted images older than 72 hours"
