@@ -1,0 +1,20 @@
+# .github/.github/workflow-templates/template-workflow.yml
+
+# ⚠️ 수정 필요: 템플릿의 이름과 설명을 자유롭게 변경하세요.
+name: Organization Standard Docker CI/CD
+description: Starts the standard Docker CI/CD workflow for the organization.
+
+# ℹ️ 수정 불필요: main 브랜치에 push 이벤트가 발생했을 때 워크플로우가 실행됩니다.
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  call-reusable-workflow:
+    # ℹ️ 수정 불필요: 조직 비밀을 상속받아 사용합니다.
+    secrets: inherit
+    
+    # ⚠️ 수정 필요: YOUR_ORGANIZATION을 실제 조직 이름으로 변경하세요.
+    # 4단계에서 만든 재사용 워크플로우를 호출하는 부분입니다.
+    # 형식: <조직명>/.github/.github/workflows/<파일명>@<브랜치명>
+    uses: YOUR_ORGANIZATION/.github/.github/workflows/reusable-ci-cd.yml@main
