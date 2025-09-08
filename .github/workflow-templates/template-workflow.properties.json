@@ -1,8 +1,0 @@
-{
-    "name": "Organization Standard Docker CI/CD",
-    "description": "Deploys the application to the organization's self-hosted runner using Docker.",
-    "iconName": "docker",
-    "categories": [
-        "Deployment"
-    ]
-}
