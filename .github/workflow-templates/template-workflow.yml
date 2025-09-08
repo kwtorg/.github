@@ -17,4 +17,4 @@ jobs:
     # ⚠️ 수정 필요: YOUR_ORGANIZATION을 실제 조직 이름으로 변경하세요.
     # 4단계에서 만든 재사용 워크플로우를 호출하는 부분입니다.
     # 형식: <조직명>/.github/.github/workflows/<파일명>@<브랜치명>
-    uses: YOUR_ORGANIZATION/.github/.github/workflows/reusable-ci-cd.yml@main
+    uses: kwtorg/.github/.github/workflows/reusable-ci-cd.yml@main
