@@ -1,62 +1,53 @@
-# .github/.github/workflows/reusable-ci-cd.yml
+# 파일: .github/.github/workflows/reusable-ci-cd.yml
 
-name: Reusable Docker CI/CD
+name: Reusable Per-Architecture Deployment
 
 on:
   workflow_call:
 
 jobs:
-  # --- 잡 1: 단순 코드 업데이트 (No-Deploy Push) ---
-  # Self-Hosted Runner에서는 소스 코드를 checkout하는 것만으로도 서버에 최신 코드가 반영되므로,
-  # 이 잡은 사실상 코드 체크아웃 작업만 수행합니다.
-  update-code-only:
-    if: "!contains(github.event.head_commit.message, '[deploy]')"
-    runs-on: self-hosted
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Log code update
-        run: |
-          echo "✅ Repository code updated on the self-hosted runner."
-          echo "🔄 Code synchronization complete."
-
-  # --- 잡 2: 빌드, 전송, 배포 (Deploy Push) ---
-  build-and-deploy:
+  # --- 잡 1: ARM64 서버에 배포 ---
+  deploy-arm64:
+    # ℹ️ 수정 불필요: [deploy] 커밋일 때만 실행됩니다.
     if: "contains(github.event.head_commit.message, '[deploy]')"
-    runs-on: self-hosted
+    # ℹ️ 수정 불필요: 'arm64' 레이블이 달린 Runner에서만 이 잡을 실행합니다.
+    runs-on:
+      - self-hosted
+      - arm64
     steps:
-      # 1. 소스 코드 체크아웃
-      # Runner가 설치된 서버의 작업 디렉터리로 코드를 가져옵니다.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Docker 빌드 및 배포
-      # SSH/SCP가 필요 없이 Runner에서 직접 Docker 명령어를 실행합니다.
-      - name: Build and Deploy on Server
+      - name: Build and Deploy on ARM64 Server
         working-directory: ${{ github.workspace }}
         run: |
-          # 각 저장소의 컨테이너가 충돌하지 않도록 프로젝트 이름을 동적으로 설정합니다.
           REPO_NAME=${{ github.event.repository.name }}
-          echo "🚀 Starting deployment for $REPO_NAME..."
-
-          # .env 파일이 없으면 .env.example을 복사하여 생성합니다.
-          if [ ! -f .env ]; then
-            echo "📋 .env file not found. Copying from .env.example..."
-            cp .env.example .env
-          fi
-
-          # 로그 디렉터리 생성
-          mkdir -p logs
-
-          # Docker Compose로 빌드 및 실행
-          # --project-name 옵션을 사용하여 각 리포지토리의 컨테이너를 격리합니다.
-          echo "🐳 Building and running Docker containers..."
+          echo "🚀 Starting ARM64 deployment for $REPO_NAME..."
+          # ARM64 Runner가 ARM64 서버에서 직접 네이티브 빌드를 수행합니다.
           docker compose --project-name $REPO_NAME build
           docker compose --project-name $REPO_NAME up -d
-
-          # 불필요한 빌더 캐시 정리
-          echo "🧹 Pruning Docker builder cache..."
           docker builder prune -f
+          echo "🎉 ARM64 deployment completed successfully for $REPO_NAME!"
 
-          echo "🎉 Deployment completed successfully for $REPO_NAME!"
+  # --- 잡 2: AMD64(Intel) 서버에 배포 ---
+  deploy-amd64:
+    # ℹ️ 수정 불필요: [deploy] 커밋일 때만 실행됩니다.
+    if: "contains(github.event.head_commit.message, '[deploy]')"
+    # ℹ️ 수정 불필요: 'amd64' 레이블이 달린 Runner에서만 이 잡을 실행합니다.
+    runs-on:
+      - self-hosted
+      - amd64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and Deploy on AMD64 Server
+        working-directory: ${{ github.workspace }}
+        run: |
+          REPO_NAME=${{ github.event.repository.name }}
+          echo "🚀 Starting AMD64 deployment for $REPO_NAME..."
+          # AMD64 Runner가 Intel 서버에서 직접 네이티브 빌드를 수행합니다.
+          docker compose --project-name $REPO_NAME build
+          docker compose --project-name $REPO_NAME up -d
+          docker builder prune -f
+          echo "🎉 AMD64 deployment completed successfully for $REPO_NAME!"
