@@ -8,6 +8,8 @@ on:
 
 jobs:
   sync-and-deploy:
+    if: ${{ github.repository != 'kwtorg/project-template' }}
+    
     strategy:
       matrix:
         architecture: [arm64, amd64]
