@@ -23,13 +23,18 @@ jobs:
           mkdir -p /home/ubuntu/repositories
           echo "✅ Base directory /home/ubuntu/repositories is ready."
 
-      # 2. 소스 코드 체크아웃
-      - name: Checkout repository to specific path
+      # 2. Runner 기본 위치에 체크아웃
+      - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          path: /home/ubuntu/repositories/${{ github.event.repository.name }}
 
-      # 3. GitHub Secret을 기반으로 .env 파일 자동 생성
+      # 3. /home/ubuntu/repositories/{repo} 로 소스 동기화
+      - name: Sync repository to /home/ubuntu/repositories
+        shell: bash
+        run: |
+          mkdir -p /home/ubuntu/repositories/${{ github.event.repository.name }}
+          rsync -av --delete $GITHUB_WORKSPACE/ /home/ubuntu/repositories/${{ github.event.repository.name }}/
+
+      # 4. GitHub Secret을 기반으로 .env 파일 자동 생성
       - name: Create .env file if required
         id: create-dotenv
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
@@ -52,7 +57,7 @@ jobs:
             echo "ℹ️ docker-compose.yml does not reference an .env file. Skipping."
           fi
 
-      # 4. Docker 볼륨용 디렉터리 생성
+      # 5. Docker 볼륨 디렉터리 생성
       - name: Create directories for Docker volumes
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         shell: bash
@@ -65,7 +70,7 @@ jobs:
             echo "ℹ️ .volume_dirs file not found, skipping directory creation."
           fi
 
-      # 5. 조건부 빌드 및 배포
+      # 6. 조건부 빌드 및 배포
       - name: Build and Deploy (if [deploy] is in commit message)
         if: contains(github.event.head_commit.message, '[deploy]')
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
@@ -78,7 +83,7 @@ jobs:
           docker builder prune -f
           echo "🎉 ${{ matrix.architecture }} deployment completed successfully for $REPO_NAME!"
 
-      # 6. [deploy] 미포함시 sync만 수행
+      # 7. [deploy] 미포함시 sync만 수행
       - name: Notify code sync only
         if: "!contains(github.event.head_commit.message, '[deploy]')"
         run: |
