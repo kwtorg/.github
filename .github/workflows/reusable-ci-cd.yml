@@ -33,17 +33,28 @@ jobs:
         with:
           path: '~/repositories/${{ github.event.repository.name }}'
       
-      # ✨ [신규] 3. GitHub Secret으로 .env 파일 자동 생성
-      - name: Create .env file from secret
-        # DOT_ENV 라는 이름의 secret이 설정되어 있는 경우에만 이 단계를 실행합니다.
-        if: ${{ secrets.DOT_ENV }}
+      # ✨ [수정] 3. GitHub Secret으로 .env 파일 자동 생성
+      - name: Create .env file if required
+        id: create-dotenv
         working-directory: '~/repositories/${{ github.event.repository.name }}'
         shell: bash
         run: |
-          echo "🔑 DOT_ENV secret found. Creating .env file..."
-          # secret의 내용을 .env 파일에 씁니다.
-          echo "${{ secrets.DOT_ENV }}" > .env
-          echo "✅ .env file created successfully."
+          # docker-compose.yml 에 env_file 옵션이 있는지 체크
+          if grep -q "env_file:" docker-compose.yml; then
+            echo "ℹ️ docker-compose.yml requires an .env file."
+            
+            # secret 이 정의되어 있다면 .env 파일 생성
+            if [ -n "${{ secrets.DOT_ENV }}" ]; then
+              echo "🔑 DOT_ENV secret found. Creating .env file..."
+              echo "${{ secrets.DOT_ENV }}" > .env
+              echo "✅ .env file created successfully."
+            else
+              echo "❌ DOT_ENV secret is missing, but docker-compose.yml requires .env"
+              exit 1
+            fi
+          else
+            echo "ℹ️ docker-compose.yml does not reference an .env file. Skipping."
+          fi
 
       # 4. Docker 볼륨을 위한 디렉터리 생성
       - name: Create directories for Docker volumes
