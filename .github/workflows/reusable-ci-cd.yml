@@ -63,6 +63,15 @@ jobs:
           else
             echo "ℹ️ .volume_dirs not found, skipping"
           fi
+          
+      # 5.5. 기존 컨테이너 정리 (포트 충돌 방지)
+      - name: Stop and remove existing containers
+        if: contains(github.event.head_commit.message, '[deploy]')
+        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
+        shell: bash
+        run: |
+          echo "🛑 Stopping and removing existing containers..."
+          docker compose --project-name ${{ github.event.repository.name }} down --remove-orphans || true
 
       # 6. Build & Deploy (SHA + latest 태그 전략)
       - name: Build and Deploy (if [deploy] is in commit message)
