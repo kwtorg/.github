@@ -1,79 +1,77 @@
 # 파일 경로: .github/.github/workflows/reusable-ci-cd.yml
-# 역할: 실제 코드 동기화, 빌드, 배포 로직을 정의하는 재사용 워크플로우
+# 역할: .env 자동 생성 기능이 포함된 최종 CI/CD 워크플로우
 
 name: Reusable Per-Architecture Deployment
 
 on:
   workflow_call:
+    # ℹ️ 호출하는 워크플로우로부터 secrets를 전달받기 위해 명시적으로 선언합니다.
+    secrets:
+      DOT_ENV:
+        required: false # 이 secret이 없어도 워크플로우는 실패하지 않습니다.
 
 jobs:
-  # --- ARM64 및 AMD64 서버에 동기화 및 배포 (Matrix 전략으로 통합) ---
   sync-and-deploy:
-    # ℹ️ Matrix 전략을 사용해 ARM64와 AMD64 잡을 하나로 통합하여 코드 중복을 제거하고 유지보수성을 높입니다.
     strategy:
       matrix:
         architecture: [arm64, amd64]
-
-    # ℹ️ 'self-hosted' 및 matrix에 정의된 아키텍처 레이블을 가진 Runner에서 잡을 실행합니다.
     runs-on:
       - self-hosted
       - ${{ matrix.architecture }}
 
     steps:
-      # [해결] 유의사항2: 코드 저장 경로 지정 및 폴더 생성
-      # 1. 프로젝트 코드를 저장할 부모 디렉터리 생성 (~/repositories)
+      # 1. 베이스 디렉터리 생성
       - name: Create base repositories directory
-        # 셸의 홈 디렉터리(~)를 참조하기 위해 bash를 사용합니다.
         shell: bash
         run: |
-          # ~/repositories 디렉터리가 없으면 생성합니다.
           mkdir -p ~/repositories
           echo "✅ Base directory ~/repositories is ready."
 
-      # 2. 지정된 경로로 소스 코드 체크아웃 (또는 최신화)
+      # 2. 지정된 경로로 소스 코드 체크아웃
       - name: Checkout repository to specific path
         uses: actions/checkout@v4
         with:
-          # 각 프로젝트 저장소 이름으로 된 폴더 내에 코드를 체크아웃합니다.
-          # 이 폴더가 이미 존재하면 git pull과 동일하게 최신 코드로 업데이트됩니다.
           path: '~/repositories/${{ github.event.repository.name }}'
-
-      # [해결] 유의사항3: Docker 볼륨을 위한 디렉터리 자동 생성
-      # 3. .volume_dirs 파일에 명시된 디렉터리 생성
-      - name: Create directories for Docker volumes
-        # 체크아웃된 프로젝트 폴더로 이동하여 작업을 수행합니다.
+      
+      # ✨ [신규] 3. GitHub Secret으로 .env 파일 자동 생성
+      - name: Create .env file from secret
+        # DOT_ENV 라는 이름의 secret이 설정되어 있는 경우에만 이 단계를 실행합니다.
+        if: ${{ secrets.DOT_ENV }}
         working-directory: '~/repositories/${{ github.event.repository.name }}'
         shell: bash
         run: |
-          # .volume_dirs 파일이 존재하는지 확인합니다.
+          echo "🔑 DOT_ENV secret found. Creating .env file..."
+          # secret의 내용을 .env 파일에 씁니다.
+          echo "${{ secrets.DOT_ENV }}" > .env
+          echo "✅ .env file created successfully."
+
+      # 4. Docker 볼륨을 위한 디렉터리 생성
+      - name: Create directories for Docker volumes
+        working-directory: '~/repositories/${{ github.event.repository.name }}'
+        shell: bash
+        run: |
           if [ -f .volume_dirs ]; then
             echo "📄 .volume_dirs file found. Creating specified directories..."
-            # 파일의 각 줄을 읽어 디렉터리를 생성합니다. -p 옵션으로 하위 디렉터리까지 안전하게 생성합니다.
-            # 빈 줄이나 주석(#으로 시작)은 무시합니다.
             grep -v '^#' .volume_dirs | grep -v '^[[:space:]]*$' | xargs mkdir -p
             echo "✅ All directories for volumes are created."
           else
             echo "ℹ️ .volume_dirs file not found, skipping directory creation."
           fi
 
-      # [해결] 유의사항1: 커밋 메시지에 따라 빌드 및 배포를 조건부로 실행
-      # 4. 조건부 빌드 및 배포
+      # 5. 조건부 빌드 및 배포
       - name: Build and Deploy (if [deploy] is in commit message)
-        # 커밋 메시지에 '[deploy]'가 포함된 경우에만 이 단계를 실행합니다.
         if: "contains(github.event.head_commit.message, '[deploy]')"
         working-directory: '~/repositories/${{ github.event.repository.name }}'
         run: |
           REPO_NAME=${{ github.event.repository.name }}
           echo "🚀 Commit includes [deploy], starting build and deploy process for $REPO_NAME on ${{ matrix.architecture }}..."
-          # docker-compose.yml이 있는 프로젝트 폴더 내부에서 직접 네이티브 빌드를 수행합니다.
           docker compose --project-name $REPO_NAME build
           docker compose --project-name $REPO_NAME up -d --remove-orphans
           docker builder prune -f
           echo "🎉 ${{ matrix.architecture }} deployment completed successfully for $REPO_NAME!"
 
-      # 5. [deploy]가 없을 경우 알림 메시지 출력
+      # 6. [deploy]가 없을 경우 알림 메시지 출력
       - name: Notify code sync only
-        # 커밋 메시지에 '[deploy]'가 포함되지 않은 경우에만 이 단계를 실행합니다.
         if: "!contains(github.event.head_commit.message, '[deploy]')"
         run: |
           echo "✅ Code sync completed for ${{ github.event.repository.name }} on ${{ matrix.architecture }}. No [deploy] keyword found, skipping build and deployment."
