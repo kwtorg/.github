@@ -70,8 +70,9 @@ jobs:
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         shell: bash
         run: |
-          REPO_NAME=${{ github.event.repository.name }}
-          COMMIT_SHA=${{ github.sha }}
+          export REPO_NAME=${{ github.event.repository.name }}
+          export HOST_REPO_PATH=/home/ubuntu/repositories/${{ github.event.repository.name }}
+          export COMMIT_SHA=${{ github.sha }}
 
           echo "🚀 Building $REPO_NAME ($COMMIT_SHA, tagging also as latest)..."
           docker build -t $REPO_NAME:$COMMIT_SHA -t $REPO_NAME:latest .
