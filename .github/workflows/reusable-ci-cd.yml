@@ -4,11 +4,11 @@ on:
   workflow_call:
     secrets:
       DOT_ENV:
-        required: false
+        required: true   # .env 반드시 필요 (HOST_PORT 포함)
 
 jobs:
   sync-and-deploy:
-    if: ${{ github.repository != 'kwtorg/project-template' }} # 템플릿 repo 배포 제외
+    if: ${{ github.repository != 'kwtorg/project-template' }}
     strategy:
       matrix:
         architecture: [arm64, amd64]
@@ -26,31 +26,26 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # 3. /home/ubuntu/repositories/{repo} 로 소스 동기화
+      # 3. 소스 동기화
       - name: Sync repository to /home/ubuntu/repositories
         shell: bash
         run: |
           mkdir -p /home/ubuntu/repositories/${{ github.event.repository.name }}
           rsync -av --delete $GITHUB_WORKSPACE/ /home/ubuntu/repositories/${{ github.event.repository.name }}/
 
-      # 4. .env 파일 자동 생성 (docker-compose.yml 기준 확인)
-      - name: Create .env file if required
+      # 4. .env 파일 생성 (DOT_ENV -> .env)
+      - name: Create .env file from DOT_ENV secret
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         shell: bash
         env:
           DOT_ENV: ${{ secrets.DOT_ENV }}
         run: |
-          if [ -f "docker-compose.yml" ] && grep -q "env_file:" docker-compose.yml; then
-            if [ -n "$DOT_ENV" ]; then
-              echo "$DOT_ENV" > .env
-              echo "✅ .env file created"
-            else
-              echo "❌ DOT_ENV secret missing but required"
-              exit 1
-            fi
-          else
-            echo "ℹ️ This project does not require .env, skipping"
+          echo "$DOT_ENV" > .env
+          if ! grep -q "HOST_PORT=" .env; then
+            echo "❌ HOST_PORT not set in DOT_ENV secret!"
+            exit 1
           fi
+          echo "✅ .env file created with HOST_PORT"
 
       # 5. Docker 볼륨 디렉토리 생성
       - name: Create directories for Docker volumes
@@ -63,8 +58,8 @@ jobs:
           else
             echo "ℹ️ .volume_dirs not found, skipping"
           fi
-          
-      # 5.5. 기존 컨테이너 정리 (포트 충돌 방지)
+
+      # 5.5. 기존 컨테이너 정리
       - name: Stop and remove existing containers
         if: contains(github.event.head_commit.message, '[deploy]')
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
@@ -73,7 +68,7 @@ jobs:
           echo "🛑 Stopping and removing existing containers..."
           docker compose --project-name ${{ github.event.repository.name }} down --remove-orphans || true
 
-      # 6. Build & Deploy (SHA + latest 태그 전략)
+      # 6. Build & Deploy
       - name: Build and Deploy (if [deploy] is in commit message)
         if: contains(github.event.head_commit.message, '[deploy]')
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
