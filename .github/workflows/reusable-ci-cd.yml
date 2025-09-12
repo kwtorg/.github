@@ -55,45 +55,41 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy:
-    runs-on: [self-hosted, linux]   # 서버에 설치된 self-hosted runner
+    runs-on: [self-hosted, linux]
     needs: build-and-push-image
-    environment: production
-    secrets: inherit
-
+  
     steps:
-      - name: Setup repository directory
-        run: |
-          mkdir -p /home/ubuntu/repositories/${{ github.event.repository.name }}
-          cd /home/ubuntu/repositories/${{ github.event.repository.name }}
-
-      # .env 생성
-      - name: Create .env file from secrets
+      - name: Setup repo dir
+        run: mkdir -p /home/ubuntu/repositories/${{ github.event.repository.name }}
+  
+      - name: Create .env from Secrets
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         env:
           DOT_ENV_PROD: ${{ secrets.DOT_ENV_PROD }}
         run: |
           echo "$DOT_ENV_PROD" > .env
           if ! grep -q "HOST_PORT=" .env; then
-            echo "❌ HOST_PORT not found in DOT_ENV_PROD!"
-            exit 1
+            echo "❌ HOST_PORT not found"; exit 1;
           fi
-          echo "✅ .env created with HOST_PORT"
-
-      # 기존 컨테이너 중지
+  
       - name: Stop existing containers
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
-        run: |
-          echo "🛑 Stopping existing containers..."
-          docker compose --project-name ${{ github.event.repository.name }} down --remove-orphans || true
-
-      # GHCR Pull & Deploy
-      - name: Deploy using docker-compose
+        run: docker compose --project-name ${{ github.event.repository.name }} down --remove-orphans || true
+  
+      - name: Deploy latest image
+        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
+        run: docker compose --project-name ${{ github.event.repository.name }} up -d --remove-orphans
+  
+      - name: Run DB Migration (Optional)
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         run: |
-          echo "🚀 Deploying ghcr.io/${{ github.repository }}:latest ..."
-          docker compose --project-name ${{ github.event.repository.name }} up -d --remove-orphans
-          echo "🎉 Deployment completed"
-
-      # 오래된 이미지 정리
+          echo "⚠️ 선택적 DB Migration 단계입니다."
+          echo "프레임워크에 따라 주석 해제:"
+          # docker compose exec app alembic upgrade head
+          # docker compose exec app python manage.py migrate
+          # docker compose exec app npx prisma migrate deploy
+          # docker compose exec app npx sequelize db:migrate
+  
       - name: Cleanup old docker images
         run: docker image prune -af --filter "until=72h"
+  
