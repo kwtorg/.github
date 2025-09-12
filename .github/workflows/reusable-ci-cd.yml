@@ -1,3 +1,4 @@
+# 파일 위치 : .github/.github/workflows/reusable-ci-cd.yml
 name: Reusable Per-Architecture Deployment
 
 on:
