@@ -80,16 +80,5 @@ jobs:
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         run: docker compose --project-name ${{ github.event.repository.name }} up -d --remove-orphans
   
-      - name: Run DB Migration (Optional)
-        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
-        run: |
-          echo "⚠️ 선택적 DB Migration 단계입니다."
-          echo "프레임워크에 따라 주석 해제:"
-          # docker compose exec app alembic upgrade head
-          # docker compose exec app python manage.py migrate
-          # docker compose exec app npx prisma migrate deploy
-          # docker compose exec app npx sequelize db:migrate
-  
       - name: Cleanup old docker images
         run: docker image prune -af --filter "until=72h"
-  
