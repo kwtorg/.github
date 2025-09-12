@@ -12,22 +12,19 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read        # 코드 체크아웃 권한
-      packages: write       # GHCR 배포 권한
+      contents: read
+      packages: write
 
     steps:
-      # 1. 코드 체크아웃
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # 2. QEMU & Buildx 멀티아키 지원
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 3. GHCR 로그인
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -35,14 +32,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 4. 메타데이터 설정
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
 
-      # 5. 멀티스테이지 빌드 & GHCR 푸시
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -61,13 +56,14 @@ jobs:
     env:
       REPO_NAME: ${{ github.event.repository.name }}
       REPO_DIR: /volume1/docker/repositories/${{ github.event.repository.name }}
+      COMMIT_MSG: ${{ github.event.head_commit.message }}
 
     defaults:
       run:
         working-directory: ${{ env.REPO_DIR }}
 
     steps:
-      - name: Setup repo dir
+      - name: Ensure repo directory exists
         run: mkdir -p $REPO_DIR
   
       - name: Create .env from Secrets
@@ -80,12 +76,32 @@ jobs:
           if ! grep -q "HOST_PORT=" .env; then
             echo "❌ HOST_PORT not found"; exit 1;
           fi
-  
+
+      # --- 분기 처리: [deploy] 커밋 메시지 포함 여부 체크 ---
+      - name: Check if commit contains [deploy]
+        id: deploy_check
+        run: |
+          echo "commit: $COMMIT_MSG"
+          if [[ "$COMMIT_MSG" == *"[deploy]"* ]]; then
+            echo "deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      # --- 배포 Job (커밋 메시지에 [deploy]가 있을 때만 실행) ---
       - name: Stop existing containers
+        if: steps.deploy_check.outputs.deploy == 'true'
         run: docker compose --project-name $REPO_NAME down --remove-orphans || true
-  
+
       - name: Deploy latest image
+        if: steps.deploy_check.outputs.deploy == 'true'
         run: docker compose --project-name $REPO_NAME up -d --remove-orphans
-  
+
       - name: Cleanup old docker images
+        if: steps.deploy_check.outputs.deploy == 'true'
         run: docker image prune -af --filter "until=72h"
+
+      # --- 코드 최신화 전용 Step (배포하지 않을 때) ---
+      - name: Sync code only (no deploy)
+        if: steps.deploy_check.outputs.deploy == 'false'
+        run: echo "✅ 커밋 메시지에 [deploy] 없음 → 배포하지 않고 코드/환경 파일만 최신화 완료."
