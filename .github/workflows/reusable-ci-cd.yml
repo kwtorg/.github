@@ -63,11 +63,12 @@ jobs:
         run: mkdir -p /home/ubuntu/repositories/${{ github.event.repository.name }}
   
       - name: Create .env from Secrets
-        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
         env:
           DOT_ENV_PROD: ${{ secrets.DOT_ENV_PROD }}
         run: |
-          echo "$DOT_ENV_PROD" > .env
+          cat <<'EOF' > .env
+          $DOT_ENV_PROD
+          EOF
           if ! grep -q "HOST_PORT=" .env; then
             echo "❌ HOST_PORT not found"; exit 1;
           fi
