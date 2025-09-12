@@ -1,99 +1,99 @@
 # 파일 위치 : .github/.github/workflows/reusable-ci-cd.yml
-name: Reusable Per-Architecture Deployment
+name: Reusable GHCR Deployment Workflow
 
 on:
   workflow_call:
     secrets:
-      DOT_ENV:
-        required: true   # .env 반드시 필요 (HOST_PORT 포함)
+      DOT_ENV_PROD:   # 서버 배포환경용 secrets (production)
+        required: true
 
 jobs:
-  sync-and-deploy:
-    if: ${{ github.repository != 'kwtorg/project-template' }}
-    strategy:
-      matrix:
-        architecture: [arm64, amd64]
-    runs-on:
-      - self-hosted
-      - ${{ matrix.architecture }}
+  build-and-push-image:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read        # 코드 체크아웃 권한
+      packages: write       # GHCR 배포 권한
 
     steps:
-      # 1. 베이스 디렉터리 생성
-      - name: Create base repositories directory
-        shell: bash
-        run: mkdir -p /home/ubuntu/repositories
-
-      # 2. Checkout
+      # 1. 코드 체크아웃
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # 3. 소스 동기화
-      - name: Sync repository to /home/ubuntu/repositories
-        shell: bash
+      # 2. QEMU & Buildx 멀티아키 지원
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. GHCR 로그인
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 4. 메타데이터 설정
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+
+      # 5. 멀티스테이지 빌드 & GHCR 푸시
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    runs-on: [self-hosted, linux]   # 서버에 설치된 self-hosted runner
+    needs: build-and-push-image
+    environment: production
+    secrets: inherit
+
+    steps:
+      - name: Setup repository directory
         run: |
           mkdir -p /home/ubuntu/repositories/${{ github.event.repository.name }}
-          rsync -av --delete $GITHUB_WORKSPACE/ /home/ubuntu/repositories/${{ github.event.repository.name }}/
+          cd /home/ubuntu/repositories/${{ github.event.repository.name }}
 
-      # 4. .env 파일 생성 (DOT_ENV -> .env)
-      - name: Create .env file from DOT_ENV secret
+      # .env 생성
+      - name: Create .env file from secrets
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
-        shell: bash
         env:
-          DOT_ENV: ${{ secrets.DOT_ENV }}
+          DOT_ENV_PROD: ${{ secrets.DOT_ENV_PROD }}
         run: |
-          echo "$DOT_ENV" > .env
+          echo "$DOT_ENV_PROD" > .env
           if ! grep -q "HOST_PORT=" .env; then
-            echo "❌ HOST_PORT not set in DOT_ENV secret!"
+            echo "❌ HOST_PORT not found in DOT_ENV_PROD!"
             exit 1
           fi
-          echo "✅ .env file created with HOST_PORT"
+          echo "✅ .env created with HOST_PORT"
 
-      # 5. Docker 볼륨 디렉토리 생성
-      - name: Create directories for Docker volumes
+      # 기존 컨테이너 중지
+      - name: Stop existing containers
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
-        shell: bash
         run: |
-          if [ -f .volume_dirs ]; then
-            grep -v '^#' .volume_dirs | grep -v '^[[:space:]]*$' | xargs mkdir -p
-            echo "✅ Volume directories created"
-          else
-            echo "ℹ️ .volume_dirs not found, skipping"
-          fi
-
-      # 5.5. 기존 컨테이너 정리
-      - name: Stop and remove existing containers
-        if: contains(github.event.head_commit.message, '[deploy]')
-        working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
-        shell: bash
-        run: |
-          echo "🛑 Stopping and removing existing containers..."
+          echo "🛑 Stopping existing containers..."
           docker compose --project-name ${{ github.event.repository.name }} down --remove-orphans || true
 
-      # 6. Build & Deploy
-      - name: Build and Deploy (if [deploy] is in commit message)
-        if: contains(github.event.head_commit.message, '[deploy]')
+      # GHCR Pull & Deploy
+      - name: Deploy using docker-compose
         working-directory: /home/ubuntu/repositories/${{ github.event.repository.name }}
-        shell: bash
         run: |
-          export REPO_NAME=${{ github.event.repository.name }}
-          export HOST_REPO_PATH=/home/ubuntu/repositories/${{ github.event.repository.name }}
-          export COMMIT_SHA=${{ github.sha }}
+          echo "🚀 Deploying ghcr.io/${{ github.repository }}:latest ..."
+          docker compose --project-name ${{ github.event.repository.name }} up -d --remove-orphans
+          echo "🎉 Deployment completed"
 
-          echo "🚀 Building $REPO_NAME ($COMMIT_SHA, tagging also as latest)..."
-          docker build -t $REPO_NAME:$COMMIT_SHA -t $REPO_NAME:latest .
-
-          docker compose --project-name $REPO_NAME up -d --remove-orphans
-
-          docker builder prune -f
-          echo "🎉 Deployment completed for $REPO_NAME!"
-
-      # 7. deploy keyword 없으면 sync만
-      - name: Notify code sync only
-        if: "!contains(github.event.head_commit.message, '[deploy]')"
-        run: echo "✅ Code synced (no deploy)"
-
-      # 8. 오래된 이미지 정리
+      # 오래된 이미지 정리
       - name: Cleanup old docker images
-        shell: bash
-        run: |
-          docker image prune -af --filter "until=72h"
+        run: docker image prune -af --filter "until=72h"
