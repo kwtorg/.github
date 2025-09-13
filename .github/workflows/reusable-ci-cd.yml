@@ -67,6 +67,11 @@ jobs:
         working-directory: /
         run: mkdir -p $REPO_DIR
 
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.REPO_DIR }}
+
       - name: Create .env from Secrets
         env:
           DOT_ENV_PROD: ${{ secrets.DOT_ENV_PROD }}
@@ -77,13 +82,6 @@ jobs:
           if ! grep -q "HOST_PORT=" .env; then
             echo "❌ HOST_PORT not found"; exit 1;
           fi
-          
-      - name: Debug .env content
-        run: |
-          echo "==== .env generated ===="
-          cat .env | sed 's/=.*/=***hidden***/'
-          echo "========================"
-
 
       # --- 분기 처리: [deploy] 커밋 메시지 포함 여부 체크 ---
       - name: Check if commit contains [deploy]
