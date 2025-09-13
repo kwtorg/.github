@@ -67,23 +67,29 @@ jobs:
         working-directory: /
         run: mkdir -p $REPO_DIR
 
-      - name: Checkout source code
+      # 1. 러너 기본 디렉토리로 코드 체크아웃
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
-          path: ${{ env.REPO_DIR }}
-
+          fetch-depth: 1    # 최신 커밋만 가져오기 (속도 최적화)
+  
+      # 2. NAS 공유 디렉토리로 소스 전체 복사
+      - name: Sync code into NAS repo dir
+        run: rsync -av --delete ./ $REPO_DIR/
+  
+      # 3. NAS 폴더에 .env 생성
       - name: Create .env from Secrets
         env:
           DOT_ENV_PROD: ${{ secrets.DOT_ENV_PROD }}
         run: |
-          cat <<EOF > .env
+          cat <<EOF > $REPO_DIR/.env
           $DOT_ENV_PROD
           EOF
-          if ! grep -q "HOST_PORT=" .env; then
+          if ! grep -q "HOST_PORT=" $REPO_DIR/.env; then
             echo "❌ HOST_PORT not found"; exit 1;
           fi
-
-      # --- 분기 처리: [deploy] 커밋 메시지 포함 여부 체크 ---
+  
+      # 4. [deploy] 여부 확인
       - name: Check if commit contains [deploy]
         id: deploy_check
         run: |
@@ -93,21 +99,21 @@ jobs:
           else
             echo "deploy=false" >> $GITHUB_OUTPUT
           fi
-
-      # --- 배포 Job (커밋 메시지에 [deploy]가 있을 때만 실행) ---
+  
+      # 5. docker compose 배포 (필요할 때만)
       - name: Stop existing containers
         if: steps.deploy_check.outputs.deploy == 'true'
         run: docker compose --project-name $REPO_NAME down --remove-orphans || true
-
+  
       - name: Deploy latest image
         if: steps.deploy_check.outputs.deploy == 'true'
+        working-directory: ${{ env.REPO_DIR }}
         run: docker compose --project-name $REPO_NAME up -d --remove-orphans
-
+  
       - name: Cleanup old docker images
         if: steps.deploy_check.outputs.deploy == 'true'
         run: docker image prune -af --filter "until=72h"
-
-      # --- 코드 최신화 전용 Step (배포하지 않을 때) ---
+  
       - name: Sync code only (no deploy)
         if: steps.deploy_check.outputs.deploy == 'false'
-        run: echo "✅ 커밋 메시지에 [deploy] 없음 → 배포하지 않고 코드/환경 파일만 최신화 완료."
+        run: echo "✅ 코드 & .env NAS에 최신화 완료 (배포는 생략됨)"
