@@ -103,12 +103,12 @@ jobs:
       # 7. 실제 배포 (필요할 때만)
       - name: Stop existing containers
         if: steps.deploy_check.outputs.deploy == 'true'
-        run: docker compose --project-name $REPO_NAME down --remove-orphans || true
-
+        run: docker compose -f docker-compose.yml --project-name $REPO_NAME down --remove-orphans || true
+      
       - name: Deploy latest image
         if: steps.deploy_check.outputs.deploy == 'true'
         working-directory: ${{ env.REPO_DIR }}
-        run: docker compose --project-name $REPO_NAME up -d --remove-orphans
+        run: docker compose -f docker-compose.yml --project-name $REPO_NAME up -d --remove-orphans
 
       - name: Cleanup old docker images
         if: steps.deploy_check.outputs.deploy == 'true'
