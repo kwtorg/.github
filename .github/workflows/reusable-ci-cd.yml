@@ -64,6 +64,7 @@ jobs:
 
     steps:
       - name: Ensure repo directory exists
+        working-directory: /
         run: mkdir -p $REPO_DIR
   
       - name: Create .env from Secrets
