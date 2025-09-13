@@ -1,4 +1,3 @@
-# 파일 위치 : .github/.github/workflows/reusable-ci-cd.yml
 name: Reusable GHCR Deployment Workflow
 
 on:
@@ -58,29 +57,23 @@ jobs:
       REPO_DIR: /volume1/docker/repositories/${{ github.event.repository.name }}
       COMMIT_MSG: ${{ github.event.head_commit.message }}
 
-    defaults:
-      run:
-        working-directory: ${{ env.REPO_DIR }}
-
     steps:
+      # 1. 배포 폴더 보장
       - name: Ensure repo directory exists
         working-directory: /
         run: mkdir -p $REPO_DIR
 
-      # 1. 러너 기본 디렉토리로 코드 체크아웃
+      # 2. 소스코드 체크아웃 (러너 기본 경로)
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1    # 최신 커밋만 가져오기 (속도 최적화)
+          fetch-depth: 1
 
+      # 3. NAS 공유 디렉토리 최신화
       - name: Sync code into NAS repo dir
         run: rsync -av --delete $GITHUB_WORKSPACE/ $REPO_DIR/
-        
-      # 2. NAS 공유 디렉토리로 소스 전체 복사
-      - name: Sync code into NAS repo dir
-        run: rsync -av --delete ./ $REPO_DIR/
-  
-      # 3. NAS 폴더에 .env 생성
+
+      # 4. .env 파일 생성 (Secrets → NAS)
       - name: Create .env from Secrets
         env:
           DOT_ENV_PROD: ${{ secrets.DOT_ENV_PROD }}
@@ -91,8 +84,12 @@ jobs:
           if ! grep -q "HOST_PORT=" $REPO_DIR/.env; then
             echo "❌ HOST_PORT not found"; exit 1;
           fi
-  
-      # 4. [deploy] 여부 확인
+
+      # 5. (선택적) NAS 상태 디버그
+      - name: Debug NAS repo contents
+        run: ls -al $REPO_DIR
+
+      # 6. [deploy] 여부 체크
       - name: Check if commit contains [deploy]
         id: deploy_check
         run: |
@@ -102,21 +99,21 @@ jobs:
           else
             echo "deploy=false" >> $GITHUB_OUTPUT
           fi
-  
-      # 5. docker compose 배포 (필요할 때만)
+
+      # 7. 실제 배포 (필요할 때만)
       - name: Stop existing containers
         if: steps.deploy_check.outputs.deploy == 'true'
         run: docker compose --project-name $REPO_NAME down --remove-orphans || true
-  
+
       - name: Deploy latest image
         if: steps.deploy_check.outputs.deploy == 'true'
         working-directory: ${{ env.REPO_DIR }}
         run: docker compose --project-name $REPO_NAME up -d --remove-orphans
-  
+
       - name: Cleanup old docker images
         if: steps.deploy_check.outputs.deploy == 'true'
         run: docker image prune -af --filter "until=72h"
-  
+
       - name: Sync code only (no deploy)
         if: steps.deploy_check.outputs.deploy == 'false'
         run: echo "✅ 코드 & .env NAS에 최신화 완료 (배포는 생략됨)"
