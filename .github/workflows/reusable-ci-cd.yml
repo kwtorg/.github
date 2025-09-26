@@ -23,8 +23,13 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Ensure target directory exists
+        run: mkdir -p $REPO_DIR        
+        
       - name: Sync code into NAS repo dir
         run: rsync -av --delete $GITHUB_WORKSPACE/ $REPO_DIR/
+        
       - name: Create .env from Secrets
         env:
           DOT_ENV_PROD: ${{ secrets.DOT_ENV_PROD }}
