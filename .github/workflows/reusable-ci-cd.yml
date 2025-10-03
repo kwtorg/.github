@@ -1,17 +1,8 @@
 # ===================================================================
-# [Template] Reusable Self-Hosted CI/CD Workflow
+# [Template] Reusable Self-Hosted CI/CD Workflow (vars 버전)
 # -------------------------------------------------------------------
-# 이 워크플로우는 self-hosted runner가 설치된 서버에서 직접
-# 소스코드를 빌드하고 배포하는 작업을 수행합니다.
-# 외부 이미지 레지스트리를 사용하지 않아 빠르고 간결합니다.
-# ===================================================================
-# ===================================================================
-# [Template] Reusable Self-Hosted CI/CD Workflow (with runner input)
-# -------------------------------------------------------------------
-# 이 워크플로우는 self-hosted runner가 설치된 서버에서 직접
-# 소스코드를 빌드하고 배포하는 작업을 수행합니다.
-# 외부 이미지 레지스트리를 사용하지 않아 빠르고 간결합니다.
-# 실행할 러너 라벨을 input.runner 로 받아 유연하게 지정할 수 있습니다.
+# vars.DEPLOY_RUNNER (nas/mini)를 참조하여 해당 서버에서
+# 빌드 및 배포를 수행합니다.
 # ===================================================================
 name: Reusable Self-Hosted CI/CD Workflow
 
@@ -35,7 +26,7 @@ jobs:
       - name: Ensure target directory exists
         run: mkdir -p $REPO_DIR        
         
-      - name: Sync code into NAS repo dir
+      - name: Sync code into target repo dir
         run: rsync -av --delete $GITHUB_WORKSPACE/ $REPO_DIR/
         
       - name: Create .env from Secrets
