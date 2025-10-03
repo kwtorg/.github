@@ -17,18 +17,13 @@ name: Reusable Self-Hosted CI/CD Workflow
 
 on:
   workflow_call:
-    inputs:
-      runner:
-        description: "실행할 runner 라벨 (예: nas, mini)"
-        required: true
-        type: string
     secrets:
       DOT_ENV_PROD:
         required: true
 
 jobs:
   build-and-deploy:
-    runs-on: [self-hosted, "${{ inputs.runner }}"]
+    runs-on: [self-hosted, "${{ vars.DEPLOY_RUNNER }}"]
     env:
       REPO_NAME: ${{ github.event.repository.name }}
       REPO_DIR: /volume1/docker/repositories/${{ github.event.repository.name }}
