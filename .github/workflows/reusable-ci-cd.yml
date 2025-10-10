@@ -13,8 +13,7 @@ jobs:
     runs-on: self-hosted
     env:
       REPO_NAME: ${{ github.event.repository.name }}
-      # --- 2. 수정: 새로운 서버 구조에 맞게 배포 경로 변수 수정 ---
-      APP_DIR: /home/username/docker/apps/${{ github.event.repository.name }}
+      APP_DIR: $HOME/docker/apps/${{ github.event.repository.name }}
       COMMIT_MSG: ${{ github.event.head_commit.message }}
       
     steps:
