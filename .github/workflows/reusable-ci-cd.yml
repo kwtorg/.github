@@ -13,7 +13,7 @@ jobs:
     runs-on: self-hosted
     env:
       REPO_NAME: ${{ github.event.repository.name }}
-      APP_DIR: $HOME/docker/apps/${{ github.event.repository.name }}
+      APP_DIR: /home/kwtkwt/docker/apps/${{ github.event.repository.name }}
       COMMIT_MSG: ${{ github.event.head_commit.message }}
       
     steps:
