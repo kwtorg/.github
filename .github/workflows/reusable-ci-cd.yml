@@ -23,7 +23,7 @@ jobs:
 
       - name: Normalize permissions before sync
         run: |
-          echo "🔧 Ensuring correct ownership..."
+          echo "🔧 Ensuring correct ownership and permissions..."
           sudo chown -R $(whoami):$(whoami) ${{ env.APP_DIR }} || true
           sudo find ${{ env.APP_DIR }} -type d -exec chmod 755 {} \;
           sudo find ${{ env.APP_DIR }} -type f -exec chmod 644 {} \;
@@ -40,7 +40,7 @@ jobs:
             echo "No .rsyncignore found. Syncing everything."
             rsync -av --delete $GITHUB_WORKSPACE/ ${{ env.APP_DIR }}/
           fi
-        
+          
       - name: Create .env from Secrets
         env:
           DOT_ENV_PROD: ${{ secrets.DOT_ENV_PROD }}
@@ -64,13 +64,14 @@ jobs:
         working-directory: ${{ env.APP_DIR }}
         run: |
           echo "🚀 Deploying containers with host UID/GID..."
-          UID=$(id -u)
-          GID=$(id -g)
+          HOST_UID=$(id -u)
+          HOST_GID=$(id -g)
+          echo "Using HOST_UID=$HOST_UID, HOST_GID=$HOST_GID"
           docker compose -f docker-compose.yml \
             --project-name $REPO_NAME \
             up -d --build --remove-orphans --force-recreate \
-            --user "${UID}:${GID}"
-          echo "✅ Deployment completed."
+            --user "${HOST_UID}:${HOST_GID}"
+          echo "✅ Deployment completed successfully!"
 
       - name: Cleanup old docker images
         if: steps.deploy_check.outputs.deploy == 'true'
