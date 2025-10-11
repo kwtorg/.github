@@ -32,19 +32,28 @@ jobs:
         id: detect_volumes
         working-directory: ${{ env.APP_DIR }}
         run: |
+          echo "🔍 Checking for volume mounts in docker-compose.yml..."
           EXCLUDES=""
           if [ -f docker-compose.yml ]; then
-            echo "🔍 Parsing docker-compose.yml for volume mounts..."
-            EXCLUDES=$(grep "^\s*-\s\+\." docker-compose.yml | awk -F ':' '{print $1}' | sed 's/^- *\.\/\(.*\)/--exclude "\1\//g' | tr '\n' ' ')
-            echo "Detected exclude patterns: $EXCLUDES"
+            MAPS=$(grep "^\s*-\s\+\." docker-compose.yml || true)
+            if [ -n "$MAPS" ]; then
+              EXCLUDES=$(echo "$MAPS" | awk -F ':' '{print $1}' | sed 's/^- *\.\/\(.*\)/--exclude=\1\//g' | tr '\n' ' ')
+            fi
           fi
+          echo "Detected volume excludes: $EXCLUDES"
           echo "EXCLUDES=$EXCLUDES" >> $GITHUB_OUTPUT
 
       - name: Sync code into target app dir
         run: |
           echo "🚚 Syncing code to server..."
-          rsync -av --delete ${{ steps.detect_volumes.outputs.EXCLUDES }} \
-            $GITHUB_WORKSPACE/ ${{ env.APP_DIR }}/
+          if [ -n "${{ steps.detect_volumes.outputs.EXCLUDES }}" ]; then
+            echo "Applying excludes: ${{ steps.detect_volumes.outputs.EXCLUDES }}"
+            rsync -av --delete ${{ steps.detect_volumes.outputs.EXCLUDES }} \
+              $GITHUB_WORKSPACE/ ${{ env.APP_DIR }}/
+          else
+            echo "No excludes detected."
+            rsync -av --delete $GITHUB_WORKSPACE/ ${{ env.APP_DIR }}/
+          fi
         
       - name: Create .env from Secrets
         env:
@@ -75,6 +84,7 @@ jobs:
             --project-name $REPO_NAME \
             up -d --build --remove-orphans --force-recreate \
             --user "${UID}:${GID}"
+          echo "✅ Deployment completed."
 
       - name: Cleanup old docker images
         if: steps.deploy_check.outputs.deploy == 'true'
