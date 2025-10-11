@@ -28,30 +28,16 @@ jobs:
           sudo find ${{ env.APP_DIR }} -type d -exec chmod 755 {} \;
           sudo find ${{ env.APP_DIR }} -type f -exec chmod 644 {} \;
 
-      - name: Detect docker volume mount directories
-        id: detect_volumes
-        working-directory: ${{ env.APP_DIR }}
-        run: |
-          echo "🔍 Checking for volume mounts in docker-compose.yml..."
-          EXCLUDES=""
-          if [ -f docker-compose.yml ]; then
-            MAPS=$(grep "^\s*-\s\+\." docker-compose.yml || true)
-            if [ -n "$MAPS" ]; then
-              EXCLUDES=$(echo "$MAPS" | awk -F ':' '{print $1}' | sed 's/^- *\.\/\(.*\)/--exclude=\1\//g' | tr '\n' ' ')
-            fi
-          fi
-          echo "Detected volume excludes: $EXCLUDES"
-          echo "EXCLUDES=$EXCLUDES" >> $GITHUB_OUTPUT
-
       - name: Sync code into target app dir
         run: |
           echo "🚚 Syncing code to server..."
-          if [ -n "${{ steps.detect_volumes.outputs.EXCLUDES }}" ]; then
-            echo "Applying excludes: ${{ steps.detect_volumes.outputs.EXCLUDES }}"
-            rsync -av --delete ${{ steps.detect_volumes.outputs.EXCLUDES }} \
+          RSYNC_IGNORE="${GITHUB_WORKSPACE}/.rsyncignore"
+          if [ -f "$RSYNC_IGNORE" ]; then
+            echo "Using exclude patterns from $RSYNC_IGNORE"
+            rsync -av --delete --exclude-from="$RSYNC_IGNORE" \
               $GITHUB_WORKSPACE/ ${{ env.APP_DIR }}/
           else
-            echo "No excludes detected."
+            echo "No .rsyncignore found. Syncing everything."
             rsync -av --delete $GITHUB_WORKSPACE/ ${{ env.APP_DIR }}/
           fi
         
@@ -89,5 +75,5 @@ jobs:
       - name: Cleanup old docker images
         if: steps.deploy_check.outputs.deploy == 'true'
         run: |
-          echo "🧹 Cleaning up old images..."
+          echo "🧹 Cleaning up old docker images..."
           docker image prune -af --filter "until=72h"
